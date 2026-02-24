@@ -173,8 +173,8 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
 <div class="screen" id="importScreen" style="overflow-y:auto">
   <div class="topbar"><div class="topbar-l"><button class="ib" onclick="goHome()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Importer un cours</h1></div></div>
   <div class="import-section"><h3>Images et photos</h3>
-    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileIn').click()"><p>Glisse tes fichiers ici ou clique</p><small>Images JPG, PNG acceptees</small></div>
-    <input type="file" id="fileIn" multiple accept="image/*" style="display:none" onchange="handleFiles(this.files)">
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileIn').click()"><p>Glisse tes fichiers ici ou clique</p><small>Images JPG, PNG et PDF acceptes</small></div>
+    <input type="file" id="fileIn" multiple accept="image/*,application/pdf" style="display:none" onchange="handleFiles(this.files)">
     <div class="upload-btns">
       <button class="up-btn" onclick="document.getElementById('fileIn').click()"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Fichiers</button>
       <button class="up-btn" onclick="document.getElementById('camIn').click()"><svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>Camera</button>
@@ -222,7 +222,7 @@ body{font-family:'Outfit',system-ui,sans-serif;background:var(--bg);color:var(--
 
 // State
 let lib=JSON.parse(localStorage.getItem('fm_l')||'[]'),deck=null,ri=0,ratings={},convo=[];
-let uploadedImages=[];
+let uploadedFiles=[]; // {type:'image'|'pdf', dataUrl:string, name:string, blob:null}
 let generating=false;
 let recording=false,recog=null,recogFinal='',micStream=null;
 const AI_MODEL='claude-sonnet-4';
@@ -242,7 +242,7 @@ function openD(i){deck=lib[i];ri=0;ratings={};show('reviewScreen');renderRev()}
 function exportPDF(i){const d=lib[i];const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${d.title}</title><style>@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700');*{margin:0;padding:0;box-sizing:border-box}body{font-family:Outfit,system-ui;background:#fff;color:#1a1a1a;padding:2rem}.header{text-align:center;margin-bottom:2rem;padding-bottom:1.5rem;border-bottom:2px solid #e5e7eb}h1{font-size:1.6rem}p{font-size:.82rem;color:#888}.card{page-break-inside:avoid;margin-bottom:1.2rem;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden}.ct{background:#f8f9fa;padding:.8rem 1rem;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;font-size:.7rem}.cn{color:#0A84FF;font-weight:700}.cc{color:#888;text-transform:uppercase}.cq{padding:.9rem 1rem;font-weight:600;border-bottom:1px solid #f0f0f0}.ca{padding:.9rem 1rem;font-size:.85rem;color:#444;line-height:1.6}.ca strong{color:#0A84FF}.ca img{max-width:100%;max-height:200px;border-radius:6px;margin:.3rem 0}@media print{.card{break-inside:avoid}}</style></head><body><div class="header"><h1>${d.title}</h1><p>${d.cards.length} cartes</p></div>${d.cards.map((c,j)=>`<div class="card"><div class="ct"><span class="cn">${j+1}/${d.cards.length}</span><span class="cc">${c.cat||''}</span></div><div class="cq">${c.q}</div><div class="ca">${c.a}</div></div>`).join('')}</body></html>`;const b=new Blob([html],{type:'text/html'});const u=URL.createObjectURL(b);window.open(u,'_blank')||((()=>{const a=document.createElement('a');a.href=u;a.download=d.title.replace(/\W/g,'_')+'.html';a.click()})());setTimeout(()=>URL.revokeObjectURL(u),5000)}
 
 // Import screen
-function goImport(){uploadedImages=[];document.getElementById('previewGrid').innerHTML='';document.getElementById('fileCount').textContent='';document.getElementById('courseText').value='';show('importScreen')}
+function goImport(){uploadedFiles=[];document.getElementById('previewGrid').innerHTML='';document.getElementById('fileCount').textContent='';document.getElementById('courseText').value='';show('importScreen')}
 const dz=document.getElementById('dropZone');
 dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag')});
 dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
@@ -250,28 +250,40 @@ dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');ha
 
 function handleFiles(files){
   for(const f of files){
-    if(!f.type.startsWith('image/'))continue;
-    const r=new FileReader();
-    r.onload=e=>{uploadedImages.push({dataUrl:e.target.result});renderPreviews()};
-    r.readAsDataURL(f);
+    if(f.type.startsWith('image/')){
+      const r=new FileReader();
+      r.onload=e=>{uploadedFiles.push({type:'image',dataUrl:e.target.result,name:f.name});renderPreviews()};
+      r.readAsDataURL(f);
+    } else if(f.type==='application/pdf'){
+      const r=new FileReader();
+      r.onload=e=>{uploadedFiles.push({type:'pdf',dataUrl:e.target.result,name:f.name});renderPreviews()};
+      r.readAsDataURL(f);
+    }
   }
 }
 function renderPreviews(){
-  document.getElementById('previewGrid').innerHTML=uploadedImages.map((f,i)=>`<div class="preview-item"><img src="${f.dataUrl}"><div class="ptype">Image</div><button class="premove" onclick="uploadedImages.splice(${i},1);renderPreviews()">x</button></div>`).join('');
-  document.getElementById('fileCount').textContent=uploadedImages.length?uploadedImages.length+' image(s)':'';
+  document.getElementById('previewGrid').innerHTML=uploadedFiles.map((f,i)=>{
+    if(f.type==='image'){
+      return `<div class="preview-item"><img src="${f.dataUrl}"><div class="ptype">Image</div><button class="premove" onclick="uploadedFiles.splice(${i},1);renderPreviews()">x</button></div>`;
+    } else {
+      return `<div class="preview-item" style="background:rgba(255,255,255,0.05);display:grid;place-items:center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><div class="ptype">PDF</div><button class="premove" onclick="uploadedFiles.splice(${i},1);renderPreviews()">x</button></div>`;
+    }
+  }).join('');
+  document.getElementById('fileCount').textContent=uploadedFiles.length?uploadedFiles.length+' fichier(s)':'';
 }
 
 // Generate from course using Puter.js
 async function generateFromCourse(){
   const text=document.getElementById('courseText').value.trim();
-  if(!uploadedImages.length&&!text){showToast('Ajoute du contenu');return}
+  if(!uploadedFiles.length&&!text){showToast('Ajoute du contenu');return}
   if(generating){showToast('Generation en cours...');return}
   generating=true;
   document.getElementById('loader').classList.add('active');
   document.getElementById('loaderTxt').textContent='Analyse du cours...';
 
-  const imgRefs=uploadedImages.length>0?`
-Tu as ${uploadedImages.length} image(s) du cours numerotees de 1 a ${uploadedImages.length}.
+  const imageFiles=uploadedFiles.filter(f=>f.type==='image');
+  const imgRefs=imageFiles.length>0?`
+Tu as ${imageFiles.length} image(s) du cours numerotees de 1 a ${imageFiles.length}.
 Si une image est pertinente pour illustrer une carte, ajoute [IMG:N] dans la reponse (remplace N par le numero de l'image).
 Par exemple : "Le cycle de Krebs se deroule dans la mitochondrie [IMG:1]"
 Utilise les images quand elles apportent une valeur pedagogique (schemas, diagrammes, tableaux).`:'';
@@ -290,16 +302,17 @@ REGLES :
   try{
     let response;
     
-    if(uploadedImages.length>0){
-      document.getElementById('loaderTxt').textContent='Upload des images...';
+    if(uploadedFiles.length>0){
+      document.getElementById('loaderTxt').textContent='Upload des fichiers...';
       const contentParts=[];
       const uploadedPaths=[];
       
-      for(let i=0;i<uploadedImages.length;i++){
-        const dataUrl=uploadedImages[i].dataUrl;
-        const res=await fetch(dataUrl);
+      for(let i=0;i<uploadedFiles.length;i++){
+        const f=uploadedFiles[i];
+        const res=await fetch(f.dataUrl);
         const blob=await res.blob();
-        const fname='flashmed_'+Date.now()+'_'+i+'.jpg';
+        const ext=f.type==='pdf'?'pdf':'jpg';
+        const fname='flashmed_'+Date.now()+'_'+i+'.'+ext;
         const file=new File([blob],fname,{type:blob.type});
         const puterFile=await puter.fs.write(fname,file);
         contentParts.push({type:'file',puter_path:puterFile.path});
@@ -332,10 +345,10 @@ REGLES :
     const parsed=tryParse(ai);
     if(parsed){
       // Replace [IMG:N] references with actual base64 images
-      if(uploadedImages.length>0){
+      if(imageFiles.length>0){
         for(let c of parsed.cards){
-          c.q=replaceImgRefs(c.q);
-          c.a=replaceImgRefs(c.a);
+          c.q=replaceImgRefs(c.q,imageFiles);
+          c.a=replaceImgRefs(c.a,imageFiles);
         }
       }
       deck={title:parsed.title||'Flashcards',cards:parsed.cards,date:new Date().toLocaleDateString('fr-FR')};
@@ -355,11 +368,11 @@ REGLES :
 }
 
 // Replace [IMG:N] with actual <img> tags using uploaded images
-function replaceImgRefs(text){
+function replaceImgRefs(text,imageFiles){
   return text.replace(/\[IMG:(\d+)\]/g,(match,num)=>{
     const idx=parseInt(num)-1;
-    if(idx>=0&&idx<uploadedImages.length){
-      return '<img src="'+uploadedImages[idx].dataUrl+'" alt="Image du cours">';
+    if(idx>=0&&idx<imageFiles.length){
+      return '<img src="'+imageFiles[idx].dataUrl+'" alt="Image du cours">';
     }
     return match;
   });
